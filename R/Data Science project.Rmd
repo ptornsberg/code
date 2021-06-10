@@ -1,0 +1,39 @@
+---
+title: "DSBA - Exam2020"
+author: "S111640"
+date: "10/11/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Loading and installing packages
+
+```{r}
+# Importing libraries
+library(tidyverse)
+library(imager)
+library(repr)
+library(caret)
+library(keras)
+```
+
+
+```{r}
+# set up list of paths to pictures in the 
+train_NORMAL_dir <- 'c:/user/Peter/Desktop/3. semester - Cand.merc.(it.) - Data Science/Data Science for Business Applications (DSBA)/Exam project/chest_xray/chest_xray/train/NORMAL'
+train_NORMAL <- list.files(train_NORMAL_dir)
+
+# plot sample image
+test_image <- load.image(paste(train_NORMAL_dir, train_NORMAL[1], sep=''))
+plot(test_image)
+
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+```{r}
+temp
+```
+

@@ -1,0 +1,134 @@
+---
+title: "Social Stock"
+author: "S111640"
+date: "13/1/2021"
+output:
+  html_document:
+    toc: yes
+    toc_float: yes
+    code_folding: show
+    result_folding: hide
+  pdf_document:
+    toc: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# Loading the necessary libraries.
+library(tidyverse)
+library(imager)
+library(magrittr)
+library(tidytext)
+library(syuzhet)
+library(FactoMineR)
+library(skimr)
+library(dplyr)
+library(plyr)
+library(rtweet)
+library(qdapRegex)
+library(httpuv)
+library(tidymodels)
+library(tm)
+library(wordcloud2)
+library(yfinance)
+```
+
+# Alpha Vantage API
+```{r}
+# Alpha Vantage API
+PFE <- read_csv( 'https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=PFE&outputsize=full&apikey=CPL4OEAWKSN67VNI&datatype=csv' )
+MRNA <- read_csv( 'https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=MRNA&outputsize=full&apikey=CPL4OEAWKSN67VNI&datatype=csv' )
+AZN <- read_csv( 'https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=AZN&outputsize=full&apikey=CPL4OEAWKSN67VNI&datatype=csv' )
+SAN <- read_csv( 'https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=SAN&outputsize=full&apikey=CPL4OEAWKSN67VNI&datatype=csv' )
+JNJ <- read_csv( 'https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=JNJ&outputsize=full&apikey=CPL4OEAWKSN67VNI&datatype=csv' )
+
+# System sleep, as the Alpha Vantage API only allowed to get five requests per 15 minuts. 
+Sys.sleep(1000)
+
+NVAX <- read_csv( 'https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=NVAX&outputsize=full&apikey=CPL4OEAWKSN67VNI&datatype=csv' )
+CVAC <- read_csv( 'https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=CVAC&outputsize=full&apikey=CPL4OEAWKSN67VNI&datatype=csv' )
+VLA <- read_csv( 'https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=VLA.PAR&outputsize=full&apikey=CPL4OEAWKSN67VNI&datatype=csv' )
+
+# URL for stock exchange symbol search.
+# https://www.alphavantage.co/query?function=SYMBOL_SEARCH&keywords=Valneva&apikey=CPL4OEAWKSN67VNI
+
+# Adds the columns "company", "Symbol", "currency" and "stockExcange".
+PFE <- mutate(PFE, company = "Pfizer", symbol = "PFE", currency = "USD", stockExchange = "NYSE")  
+MRNA <- mutate(MRNA, company = "Moderna", symbol = "MRNA", currency = "USD", stockExchange = "NASDAQ")  
+AZN <- mutate(AZN, company = "AstraZeneca", symbol = "AZN", currency = "GBX", stockExchange = "LON")  
+SAN <- mutate(SAN, company = "Sanofi", symbol = "SAN", currency = "EUR", stockExchange = "EPA")  
+JNJ <- mutate(JNJ, company = "Johnson & Johnson", symbol = "JNJ", currency = "USD", stockExchange = "NYSE")  
+NVAX <- mutate(NVAX, company = "Novavax, Inc.", symbol = "NVAX", currency = "USD", stockExchange = "NASDAQ")  
+CVAC <- mutate(CVAC, company = "CureVac BV", symbol = "CVAC", currency = "USD", stockExchange = "NASDAQ")  
+VLA <- mutate(VLA, company = "Valneva SE", symbol = "VLA", currency = "EUR", stockExchange = "EPA") 
+
+# Merge all tables together.
+portfolio <- rbind(PFE, MRNA, AZN, SAN ,JNJ, NVAX, CVAC, VLA)
+
+# Removing unneeded rows.
+portfolio %<>% filter(timestamp >= "2021-01-01")
+
+# Output file for further processing in Tableau
+write.csv(portfolio,"./Data//portfolio.csv", row.names = FALSE)
+```
+
+
+```{r}
+# Twitter API tokens
+#consumer_key <- 'auVi4thh4JsiVqwj2VX1xARUO'
+#consumer_secret <- 'nZDm5TYeNyBM1aD0CoQhNzxrYKEcnTxBvsujLdxX0VVuBvcVfq'
+#access_token <- '1349002987520352259-j7svW0iNWkX6VsUPTB9OREfqd70Vay'
+#access_secret <- 'YMud9e5flLEBSLzin6hGuut7nCn3YyEoaDVayM5EKq77J'
+```
+
+# Twitter API
+```{r}
+# Fethhing the tweets from individual companies.
+moderna_tweets <- search_tweets('moderna-vaccine -filter:retweets -filter:quotes -filter:replies', lang = 'en', retryonratelimit = TRUE)
+pfizer_tweets <- search_tweets('pfizer -filter:retweets -filter:quotes -filter:replies', lang = 'en', retryonratelimit = TRUE)
+astrazeneca_tweets <- search_tweets('astrazeneca -filter:retweets -filter:quotes -filter:replies', lang = 'en', retryonratelimit = TRUE)
+sanofi_tweets <- search_tweets('sanofi -filter:retweets -filter:quotes -filter:replies', lang = 'en', retryonratelimit = TRUE)
+johnson_tweets <- search_tweets('jnj -filter:retweets -filter:quotes -filter:replies', lang = 'en', retryonratelimit = TRUE)
+novavax_tweets <- search_tweets('novavax -filter:retweets -filter:quotes -filter:replies', lang = 'en', retryonratelimit = TRUE)
+cureVac_tweets <- search_tweets('curevac -filter:retweets -filter:quotes -filter:replies', lang = 'en', retryonratelimit = TRUE)
+valneva_tweets <- search_tweets('valneva -filter:retweets -filter:quotes -filter:replies', lang = 'en', retryonratelimit = TRUE)
+
+# Removes all but the first 15 columns and add a "company" column 
+moderna_tweets <- moderna_tweets[,1:14] %>% mutate(moderna_tweets, company = "Moderna")
+pfizer_tweets <- pfizer_tweets[,1:14] %>% mutate(pfizer_tweets, company = "Pfizer")  
+astrazeneca_tweets <- astrazeneca_tweets[,1:14] %>% mutate(astrazeneca_tweets, company = "AstraZeneca")  
+sanofi_tweets <- sanofi_tweets[,1:14] %>% mutate(sanofi_tweets, company = "Sanofi")  
+johnson_tweets <- johnson_tweets[,1:14] %>% mutate(johnson_tweets, company = "Johnson & Johnson")  
+novavax_tweets <- novavax_tweets[,1:14] %>% mutate(novavax_tweets, company = "Novavax, Inc.")  
+cureVac_tweets <- cureVac_tweets[,1:14] %>%  mutate(cureVac_tweets, company = "CureVac BV")  
+valneva_tweets <- valneva_tweets[,1:14] %>% mutate(valneva_tweets, company = "Valneva SE")
+```
+
+```{r}
+# Perform NRC sentiment analysis on tweets
+moderna_value <- get_nrc_sentiment(moderna_tweets$text)
+pfizer_value <- get_nrc_sentiment(pfizer_tweets$text)
+astrazeneca_value <- get_nrc_sentiment(astrazeneca_tweets$text)
+sanofi_value <- get_nrc_sentiment(sanofi_tweets$text)
+johnson_value <- get_nrc_sentiment(johnson_tweets$text)
+novavax_value <- get_nrc_sentiment(novavax_tweets$text)
+cureVac_value <- get_nrc_sentiment(cureVac_tweets$text)
+valneva_value <- get_nrc_sentiment(valneva_tweets$text)
+
+# Adding the sentiment analysis score to the tweets.
+moderna_twitter_score <- data.frame(moderna_tweets, moderna_value)
+pfizer_twitter_score <- data.frame(pfizer_tweets, pfizer_value)
+astrazeneca_twitter_score <- data.frame(astrazeneca_tweets, astrazeneca_value)
+sanofi_twitter_score <- data.frame(sanofi_tweets, sanofi_value)
+johnson_twitter_score <- data.frame(johnson_tweets, johnson_value)
+novavax_twitter_score <- data.frame(novavax_tweets, novavax_value)
+cureVac_twitter_score <- data.frame(cureVac_tweets, cureVac_value)
+valneva_twitter_score <- data.frame(valneva_tweets, valneva_value)
+
+# Merge all tweets tables together.
+twitterPortfolio <- rbind(moderna_twitter_score, pfizer_twitter_score, astrazeneca_twitter_score, sanofi_twitter_score ,johnson_twitter_score, novavax_twitter_score, cureVac_twitter_score, valneva_twitter_score)
+
+# Writing a csv file for further processing
+write.csv(twitterPortfolio,"./Data//twitterPortfolio.csv", row.names = TRUE)
+```

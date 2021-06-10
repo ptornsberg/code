@@ -1,0 +1,162 @@
+---
+title: "Exam project - Fraud in Region Hovedstaden"
+author: "S111640"
+date: "19/5/2020"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+# Load the necesseary libraries
+library(ggplot2)
+library(forecast)
+library(tseries)
+library(readr)
+library(tidyverse)
+library(urca)
+library(rio)
+library(TTR)
+```
+
+
+```{r crime}
+# Loading the data in from the csv file.
+data <- read.csv("Denmark_Crime_Regionwise.csv")
+
+# Filtering "Fraud" from "Region Hovedstaden" into a Time Serie by transposing the original data. 
+fraud2007.ts <- ts(t(data [50,3:53]) , frequency = 4, start = c(2007, 1))
+fraud2007.ts
+ggseasonplot(fraud2007.ts) + ggtitle("Seasonal plot of fraud in Region Hovedstaden") + ylab("Number of fraud")
+
+# Plotting the data, nameing label and title.
+autoplot(fraud2007.ts) + labs(x="Year", y = "Number of fraud", title = "Fraud in Region Hovedstaden") + scale_x_continuous(breaks = round(seq(min(fraud2007.ts),  max(fraud2007.ts), by = 1)))
+
+
+```
+```{r}
+# Testing simple models - creating a baseline. 
+# Splitting the series into a training and testset with a roughly 80/20 split.
+train <- window(fraud2007.ts, end = c(2016, 4))
+test <- window(fraud2007.ts, start = c(2017, 1))
+
+# Average Method
+avg.model <- meanf(train)
+
+# Naive Method
+naive.model <- naive(train)
+
+# Drift Method
+drift.model <- rwf(train, drift=TRUE)
+
+# Compare Accuracy
+accuracy(avg.model, test)
+accuracy(naive.model, test)
+accuracy(drift.model, test)
+
+# Plot forecast simple methods
+autoplot(train1) +
+  autolayer(forecast(avg.model), series = "Average", PI = FALSE) +
+  autolayer(forecast(naive.model), series = "Naïve", PI = FALSE) +
+  autolayer(forecast(drift.model), series = "Drift", PI = FALSE) +
+  xlab("Year") + ylab("Number of fraud") + ggtitle("Forecasting simple models") + autolayer(test, series = "Test")
+
+
+# Testing auto.arima model.
+arima.model <- auto.arima(train)
+arima.fc <- forecast(arima.model, h = 11)
+
+autoplot(arima.fc) + xlab("Year") + ylab("Number of fraud") + ggtitle("Forecasting auto ARIMA") + autolayer(arima.fc, series = "Forecast") + autolayer(test, series = "Test") 
+
+checkresiduals(arima.fc)
+accuracy(arima.fc, test)
+
+# Testing HoltWinters model. 
+fitTrain <- HoltWinters(train, beta = FALSE, gamma = FALSE )
+holt.fc <- forecast(fitTrain, h=11)
+
+accuracy(holt.fc, test)
+
+autoplot(holt.fc) + xlab("Year") + ylab("Number of fraud") + ggtitle("Forecasting HoltWinters") + autolayer(holt.fc, series = "Forecast")+ autolayer(test, series = "Test") 
+
+# Testing seasonal ARIMA(1,1,10)(1,0,0)[4]
+arima.model <- Arima(train, order = c(1,1,10), seasonal = c(1,0,0))
+fcast.arima <- forecast(arima.model, h = 11)
+
+autoplot(fcast.arima) + xlab("Year") + ylab("Number of fraud") + ggtitle("Forecasting ARIMA(1,1,10)(1,0,0)[4]") + autolayer(fcast.arima, series = "Forecast") + autolayer(test, series = "Test") 
+
+checkresiduals(fcast.arima)
+accuracy(fcast.arima, test)
+
+```
+
+
+```{r pressure, echo=FALSE}
+# Decompose into time series components
+fraudDecomp <- decompose(fraud2007.ts)
+autoplot(fraudDecomp) + xlab("Year") + ggtitle("Decomposition of fraud in Region Hovedstaden")
+```
+
+```{r}
+# Testing for stationarity by using KPSS and Agumented Dickey.
+summary(ur.kpss(fraud2007.ts))
+summary(ur.df(fraud2007.ts))
+adf.test(fraud2007.ts)
+```
+
+```{r}
+# Taking first difference and test for stationarity and unit root using KPSS and ADF.
+fraud2007.ts.diff <- diff(fraud2007.ts)
+summary(ur.kpss(fraud2007.ts.diff))
+summary(ur.df(fraud2007.ts.diff, type="none"))
+adf.test(fraud2007.ts.diff)
+
+```
+```{r}
+# Running the autocorrelation function. 
+ggAcf(fraud2007.ts) + ggtitle("Fraud in Region Hovedstaden")
+
+```
+
+
+```{r}
+# Remove seasonality
+fraudSeasonAdj <- seasadj(fraudDecomp) #We use this in ARIMA later
+autoplot(fraudSeasonAdj) + ggtitle("Fraud in Region of Copenhagen - Seasonal adjusted") + ylab("") + xlab("Year")
+
+
+#Making the series stational, by diff = 1 as found in KPSS and ADF test above.
+fraudStaionary_d1 <- diff(fraudSeasonAdj, diff = 1)
+autoplot(fraudStaionary_d1)
+
+adf.test(fraudStaionary_d1) 
+
+# Running ACF and PACF on the stataionary data. 
+ggAcf(fraudStaionary_d1) +  ggtitle("ACF plot differenced series") 
+ggPacf(fraudStaionary_d1) +  ggtitle("PACF plot differenced series")
+
+```
+
+```{r}
+# Testing ARIMA (1,1,10) model on seasonadjusted series.
+
+# Splitting the seasonal adjusted time series into a training and testset with a roughly 80/20 split.
+trainAdj <- window(fraudSeasonAdj, end = c(2016, 4))
+testAdj <- window(fraudSeasonAdj, start = c(2017, 1))
+
+# Fitting and plotting the ARIMA model alongside the test set.
+fitTrain <- arima(trainAdj, order = c(1,1,10))
+fcastTrain <- forecast(fitTrain, h=11)
+
+accuracy(fcastTrain, testAdj)
+checkresiduals(fcastTrain)
+
+autoplot(fcastTrain, series ="Forecast") + xlab("Year") + ylab("Number of fraud") + autolayer(fcastTrain, series = "Forecast") + autolayer(trainAdj, series = "Training") + autolayer(testAdj, series = "Test") + ggtitle("Forecast from ARIMA(1,1,10) on seasonadjusted series")
+```
+
+```{r}
+# Making the forecast with the Arima(1,1,10)(1,0,0)[4], two years ahead (8 periods). 
+model <- Arima(fraud2007.ts, order = c(1,1,10), seasonal = c(1,0,0))
+fcast <- forecast((model), h=8)
+autoplot(fcast) + autolayer(fcast, series = "Forecast") + xlab("Year") + ylab("Number of fraud") + autolayer(fraud2007.ts, series = "Fraud series")
+```
+
